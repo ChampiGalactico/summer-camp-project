@@ -1,4 +1,5 @@
 using Mirror;
+using Adrenak.UniMic;
 using UnityEngine;
 
 /// <summary>
@@ -31,6 +32,13 @@ public sealed class MicrophoneNoiseSource : NetworkBehaviour
     [Header("Debug")]
     [SerializeField, Tooltip("Muestra en consola el volumen actual del micrófono.")]
     private bool showDebugLogs = false;
+
+    [Header("Debug Controls")]
+    [SerializeField, Tooltip("Tecla para toggle del detector de ruido (solo debug).")]
+    private UnityEngine.InputSystem.Key muteToggleKey = UnityEngine.InputSystem.Key.M;
+
+    [SerializeField, Tooltip("Estado inicial del mute.")]
+    private bool isMuted = false;
 
     private AudioClip microphoneClip;
     private string microphoneDeviceName;
@@ -86,6 +94,15 @@ public sealed class MicrophoneNoiseSource : NetworkBehaviour
             return;
         }
 
+        // Toggle de mute con tecla configurable.
+        HandleMuteToggle();
+
+        // Si está muteado, no analiza ni publica eventos.
+        if (isMuted)
+        {
+            return;
+        }
+
         // Solo analiza cada X segundos, no cada frame (optimización).
         if (Time.time - lastAnalysisTime < analysisInterval)
         {
@@ -94,6 +111,56 @@ public sealed class MicrophoneNoiseSource : NetworkBehaviour
 
         lastAnalysisTime = Time.time;
         AnalyzeMicrophone();
+    }
+    private void HandleMuteToggle()
+    {
+        var keyboard = UnityEngine.InputSystem.Keyboard.current;
+
+        if (keyboard == null)
+        {
+            return;
+        }
+
+        if (keyboard[muteToggleKey].wasPressedThisFrame)
+        {
+            isMuted = !isMuted;
+
+            // Mutea el detector de ruido (evita eventos).
+            SetOwnMicrophoneMute(isMuted);
+
+            // Mutea también el voice chat.
+            if (EOSVoiceManager.Instance != null)
+            {
+                if (isMuted) EOSVoiceManager.Instance.Mute();
+                else EOSVoiceManager.Instance.Unmute();
+            }
+
+            Debug.Log($"[MicrophoneNoiseSource] 🎙️ Mute detector: {(isMuted ? "ON" : "OFF")}");
+        }
+    }
+    private void SetOwnMicrophoneMute(bool mute)
+    {
+        if (mute)
+        {
+            // Detiene tu propio Microphone de Unity (el que usas para el RMS).
+            if (Microphone.IsRecording(microphoneDeviceName))
+            {
+                Microphone.End(microphoneDeviceName);
+            }
+        }
+        else
+        {
+            // Reanuda la captura de tu micrófono.
+            if (!Microphone.IsRecording(microphoneDeviceName))
+            {
+                microphoneClip = Microphone.Start(
+                    deviceName: microphoneDeviceName,
+                    loop: true,
+                    lengthSec: bufferLengthSeconds,
+                    frequency: sampleRate
+                );
+            }
+        }
     }
 
     private void AnalyzeMicrophone()
@@ -114,10 +181,10 @@ public sealed class MicrophoneNoiseSource : NetworkBehaviour
 
         float rms = CalculateRMS(audioSamples);
 
-        if (showDebugLogs)
+        /* if (showDebugLogs)
         {
             Debug.Log($"[MicrophoneNoiseSource] RMS actual: {rms:F4} (umbral: {noiseThreshold:F4})");
-        }
+        } */
 
         // Si el volumen pasa el umbral, publica un evento de ruido.
         if (rms >= noiseThreshold)
@@ -156,7 +223,60 @@ public sealed class MicrophoneNoiseSource : NetworkBehaviour
             source: NoiseSource.Voice,
             sourcePlayerNetId: netId
         );
+        NoiseEventBus.Publish(noiseEvent);
 
+        // El cliente le manda al servidor su ruido.
+        // El servidor se encargará de publicarlo al bus y replicarlo si es necesario.
+        CmdReportNoise(noiseEvent.worldPosition, intensity, noiseEvent.source);
+    }
+
+    /// <summary>
+    /// [Command] Se ejecuta en el SERVIDOR cuando un cliente reporta que hizo ruido.
+    /// Solo el jugador local (dueño del Player) puede llamarlo.
+    /// </summary>
+    [Command]
+    private void CmdReportNoise(Vector3 position, float intensity, NoiseSource source)
+    {
+        Debug.Log($"[Server] 📨 🟢  Mensaje recibido del cliente. " +
+                  $"Player netId: {netId}, " +
+                  $"connectionId: {connectionToClient?.connectionId}, " +
+                  $"intensidad: {intensity:F2}");
+
+        // Publica en el bus del servidor para que las criaturas escuchen.
+        NoiseEvent noiseEvent = new NoiseEvent(
+            worldPosition: position,
+            intensity: intensity,
+            source: source,
+            sourcePlayerNetId: netId
+        );
+        NoiseEventBus.Publish(noiseEvent);
+
+        // Replica a todos los clientes REMOTOS (no al owner ni al server).
+        // isServer=true en el host significa que ya publicamos arriba,
+        // así que no queremos que el RPC lo vuelva a hacer en el host.
+        RpcNotifyNoise(position, intensity, source);
+    }
+
+    /// <summary>
+    /// [ClientRpc] Se ejecuta en clientes REMOTOS (ni el owner, ni el host-server).
+    /// Sirve para HUDs remotos, efectos visuales, o cualquier cosa que necesite ver todos los ruidos.
+    /// </summary>
+    [ClientRpc(includeOwner = false)]
+    private void RpcNotifyNoise(Vector3 position, float intensity, NoiseSource source)
+    {
+        // Si esta máquina también es el server (host), el evento ya se publicó
+        // en CmdReportNoise. Evitamos duplicarlo.
+        if (isServer)
+        {
+            return;
+        }
+
+        NoiseEvent noiseEvent = new NoiseEvent(
+            worldPosition: position,
+            intensity: intensity,
+            source: source,
+            sourcePlayerNetId: netId
+        );
         NoiseEventBus.Publish(noiseEvent);
     }
 }
