@@ -2499,6 +2499,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 1060991537307844142, guid: d3ba08cdd6b57ba4992e998fb024ce7a, type: 3}
       insertIndex: -1
       addedObject: {fileID: 5672513204609310227}
+    - targetCorrespondingSourceObject: {fileID: 1060991537307844142, guid: d3ba08cdd6b57ba4992e998fb024ce7a, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 6027920581043373137}
   m_SourcePrefab: {fileID: 100100000, guid: d3ba08cdd6b57ba4992e998fb024ce7a, type: 3}
 --- !u!143 &941054280007378376 stripped
 CharacterController:
@@ -2596,6 +2599,27 @@ MonoBehaviour:
   rigPositionMultiplier: 0.8
   rigRotationMultiplier: 1.1
   smoothing: 18
+--- !u!114 &6027920581043373137
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1086739994817874726}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2b5201fd99b246b4fbd85178d2c997e0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::NetworkRatInteractor
+  syncDirection: 0
+  syncMode: 0
+  syncInterval: 0
+  interactionOrigin: {fileID: 6675729568498259678}
+  interactionDistance: 2.2
+  interactionMask:
+    serializedVersion: 2
+    m_Bits: 8
+  drawDebugRay: 1
 --- !u!4 &5805369590082354068 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 5853930235955711644, guid: d3ba08cdd6b57ba4992e998fb024ce7a, type: 3}
