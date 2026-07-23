@@ -650,9 +650,15 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0
   creatureSpawns:
-  - creaturePrefab: {fileID: 0}
-    spawnPoint: {fileID: 0}
-    patrolWaypoints: []
+  - creaturePrefab: {fileID: 605947664979175876, guid: 8554abb791fdfce4faf605531b2e22f1, type: 3}
+    spawnPoint: {fileID: 1360679152}
+    patrolWaypoints:
+    - {fileID: 715670309}
+    - {fileID: 699855830}
+    - {fileID: 812549208}
+    - {fileID: 732116313}
+  guideSpawnPoint: {fileID: 0}
+  runnerSpawnPoint: {fileID: 0}
 --- !u!4 &541543456
 Transform:
   m_ObjectHideFlags: 0
