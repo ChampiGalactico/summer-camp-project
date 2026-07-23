@@ -30,8 +30,7 @@
   <Project Path="Unity.Burst.Editor.csproj" />
   <Project Path="Assembly-CSharp.csproj" />
   <Project Path="Mirror.csproj" />
-  <Project Path="Unity.Rider.Editor.csproj" />
-  <Project Path="Unity.VisualScripting.State.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="SimpleWebTransport.csproj" />
   <Project Path="Unity.AI.Navigation.Updater.csproj" />
   <Project Path="Mirror.Authenticators.csproj" />
