@@ -29,8 +29,7 @@
   <Project Path="Unity.PerformanceTesting.csproj" />
   <Project Path="Unity.Burst.Editor.csproj" />
   <Project Path="Mirror.csproj" />
-  <Project Path="Unity.Rider.Editor.csproj" />
-  <Project Path="Unity.VisualScripting.State.csproj" />
+  <Project Path="Assembly-CSharp.csproj" />
   <Project Path="SimpleWebTransport.csproj" />
   <Project Path="Unity.AI.Navigation.Updater.csproj" />
   <Project Path="Mirror.Authenticators.csproj" />
@@ -49,11 +48,4 @@
   <Project Path="Adrenak.UniMic.Runtime.csproj" />
   <Project Path="Unity.CollabProxy.Editor.csproj" />
   <Project Path="Mirror.CompilerSymbols.csproj" />
-  <Project Path="Assembly-CSharp.csproj" />
-  <Project Path="Unity.InputSystem.DocCodeSamples.csproj" />
-  <Project Path="Unity.VisualScripting.DocCodeExamples.csproj" />
-  <Project Path="Adrenak.BRW.csproj" />
-  <Project Path="Unity.PlasticSCM.Editor.Entities.csproj" />
-  <Project Path="Adrenak.UniMic.Editor.csproj" />
-  <Project Path="Unity.Collections.Editor.csproj" />
 </Solution>
