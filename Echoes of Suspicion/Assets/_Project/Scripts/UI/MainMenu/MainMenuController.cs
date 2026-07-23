@@ -14,15 +14,28 @@ public sealed class MainMenuController : MonoBehaviour
     [SerializeField]
     private CanvasGroup mainMenuView;
 
+    [SerializeField]
+    private CanvasGroup optionsView;
+
+    [SerializeField]
+    private CanvasGroup joinView;
+
     [Header("Navegación")]
     [SerializeField]
     private GameObject firstSelectedButton;
+
+    [SerializeField]
+    private GameObject optionsFirstSelectedButton;
+
+    [SerializeField]
+    private GameObject joinFirstSelectedObject;
 
     [Header("Transición")]
     [SerializeField, Min(0.05f)]
     private float transitionDuration = 0.6f;
 
     private IDisposable inputSubscription;
+    private Coroutine activeTransition;
     private bool menuWasOpened;
 
     private void Awake()
@@ -42,7 +55,10 @@ public sealed class MainMenuController : MonoBehaviour
 
     private void ConfigureInitialState()
     {
-        if (splashView == null || mainMenuView == null)
+        if (splashView == null ||
+            mainMenuView == null ||
+            optionsView == null ||
+            joinView == null)
         {
             Debug.LogError(
                 "MainMenuController: faltan referencias de las vistas.",
@@ -53,15 +69,29 @@ public sealed class MainMenuController : MonoBehaviour
             return;
         }
 
-        splashView.gameObject.SetActive(true);
-        splashView.alpha = 1f;
-        splashView.interactable = false;
-        splashView.blocksRaycasts = false;
+        SetViewState(
+            splashView,
+            alpha: 1f,
+            interactable: false
+        );
 
-        mainMenuView.gameObject.SetActive(true);
-        mainMenuView.alpha = 0f;
-        mainMenuView.interactable = false;
-        mainMenuView.blocksRaycasts = false;
+        SetViewState(
+            mainMenuView,
+            alpha: 0f,
+            interactable: false
+        );
+
+        SetViewState(
+            optionsView,
+            alpha: 0f,
+            interactable: false
+        );
+
+        SetViewState(
+            joinView,
+            alpha: 0f,
+            interactable: false
+        );
 
         menuWasOpened = false;
     }
@@ -74,7 +104,9 @@ public sealed class MainMenuController : MonoBehaviour
         }
 
         inputSubscription =
-            InputSystem.onAnyButtonPress.CallOnce(_ => OpenMainMenu());
+            InputSystem.onAnyButtonPress.CallOnce(
+                _ => OpenMainMenuFromSplash()
+            );
     }
 
     private void StopListeningForInput()
@@ -83,7 +115,7 @@ public sealed class MainMenuController : MonoBehaviour
         inputSubscription = null;
     }
 
-    private void OpenMainMenu()
+    private void OpenMainMenuFromSplash()
     {
         if (menuWasOpened)
         {
@@ -93,11 +125,92 @@ public sealed class MainMenuController : MonoBehaviour
         menuWasOpened = true;
         StopListeningForInput();
 
-        StartCoroutine(TransitionToMainMenu());
+        StartViewTransition(
+            splashView,
+            mainMenuView,
+            firstSelectedButton,
+            disableSourceObject: true
+        );
     }
 
-    private IEnumerator TransitionToMainMenu()
+    public void OpenOptions()
     {
+        StartViewTransition(
+            mainMenuView,
+            optionsView,
+            optionsFirstSelectedButton,
+            disableSourceObject: false
+        );
+    }
+
+    public void ReturnToMainMenuFromOptions()
+    {
+        StartViewTransition(
+            optionsView,
+            mainMenuView,
+            firstSelectedButton,
+            disableSourceObject: false
+        );
+    }
+
+    public void OpenJoinView()
+    {
+        StartViewTransition(
+            mainMenuView,
+            joinView,
+            joinFirstSelectedObject,
+            disableSourceObject: false
+        );
+    }
+
+    public void ReturnToMainMenuFromJoin()
+    {
+        StartViewTransition(
+            joinView,
+            mainMenuView,
+            firstSelectedButton,
+            disableSourceObject: false
+        );
+    }
+
+    private void StartViewTransition(
+        CanvasGroup source,
+        CanvasGroup destination,
+        GameObject selectedObject,
+        bool disableSourceObject
+    )
+    {
+        if (activeTransition != null)
+        {
+            return;
+        }
+
+        activeTransition = StartCoroutine(
+            FadeBetweenViews(
+                source,
+                destination,
+                selectedObject,
+                disableSourceObject
+            )
+        );
+    }
+
+    private IEnumerator FadeBetweenViews(
+        CanvasGroup source,
+        CanvasGroup destination,
+        GameObject selectedObject,
+        bool disableSourceObject
+    )
+    {
+        source.interactable = false;
+        source.blocksRaycasts = false;
+
+        destination.gameObject.SetActive(true);
+        destination.interactable = false;
+        destination.blocksRaycasts = false;
+
+        EventSystem.current?.SetSelectedGameObject(null);
+
         float elapsedTime = 0f;
 
         while (elapsedTime < transitionDuration)
@@ -107,34 +220,61 @@ public sealed class MainMenuController : MonoBehaviour
             float progress =
                 Mathf.Clamp01(elapsedTime / transitionDuration);
 
-            // Suaviza el inicio y el final de la transición.
             float smoothProgress =
                 progress * progress * (3f - 2f * progress);
 
-            splashView.alpha = 1f - smoothProgress;
-            mainMenuView.alpha = smoothProgress;
+            source.alpha = 1f - smoothProgress;
+            destination.alpha = smoothProgress;
 
             yield return null;
         }
 
-        splashView.alpha = 0f;
-        splashView.gameObject.SetActive(false);
+        source.alpha = 0f;
 
-        mainMenuView.alpha = 1f;
-        mainMenuView.interactable = true;
-        mainMenuView.blocksRaycasts = true;
+        if (disableSourceObject)
+        {
+            source.gameObject.SetActive(false);
+        }
 
-        SelectFirstButton();
+        destination.alpha = 1f;
+        destination.interactable = true;
+        destination.blocksRaycasts = true;
+
+        SelectObject(selectedObject);
+
+        activeTransition = null;
     }
 
-    private void SelectFirstButton()
+    private static void SetViewState(
+        CanvasGroup view,
+        float alpha,
+        bool interactable
+    )
     {
-        if (EventSystem.current == null || firstSelectedButton == null)
+        view.gameObject.SetActive(true);
+        view.alpha = alpha;
+        view.interactable = interactable;
+        view.blocksRaycasts = interactable;
+    }
+
+    private static void SelectObject(GameObject selectedObject)
+    {
+        if (EventSystem.current == null ||
+            selectedObject == null)
         {
             return;
         }
 
         EventSystem.current.SetSelectedGameObject(null);
-        EventSystem.current.SetSelectedGameObject(firstSelectedButton);
+        EventSystem.current.SetSelectedGameObject(selectedObject);
+    }
+
+    public void QuitGame()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
     }
 }
