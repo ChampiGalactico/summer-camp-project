@@ -15,6 +15,10 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
     [SerializeField]
     private LayerMask interactionMask;
 
+    [Header("Server Validation")]
+    [SerializeField, Min(0.1f)]
+    private float maximumServerDistance = 2.75f;
+
     [Header("Debug")]
     [SerializeField]
     private bool drawDebugRay = true;
@@ -72,7 +76,7 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
             hit.collider.GetComponentInParent<RatInteractable>();
 
         if (interactable == null ||
-            !interactable.CanInteract(gameObject))
+            !interactable.CanPreviewInteraction(gameObject))
         {
             return null;
         }
@@ -91,7 +95,81 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
             return;
         }
 
-        currentTarget.Interact(gameObject);
+        NetworkIdentity targetIdentity =
+            currentTarget.netIdentity;
+
+        if (targetIdentity == null ||
+            targetIdentity.netId == 0)
+        {
+            Debug.LogWarning(
+                $"{currentTarget.name} no está registrado " +
+                "como objeto de red.",
+                currentTarget);
+
+            return;
+        }
+
+        CmdTryInteract(targetIdentity);
+    }
+
+    [Command]
+    private void CmdTryInteract(
+        NetworkIdentity targetIdentity)
+    {
+        if (targetIdentity == null)
+        {
+            return;
+        }
+
+        RatInteractable target =
+            targetIdentity.GetComponent<RatInteractable>();
+
+        if (target == null)
+        {
+            return;
+        }
+
+        if (!IsWithinServerRange(target))
+        {
+            Debug.LogWarning(
+                $"{name} intentó interactuar con " +
+                $"{target.name} desde demasiado lejos.",
+                this);
+
+            return;
+        }
+
+        if (!target.CanServerInteract(netIdentity))
+        {
+            return;
+        }
+
+        target.ServerInteract(netIdentity);
+    }
+
+    [Server]
+    private bool IsWithinServerRange(
+        RatInteractable target)
+    {
+        Vector3 serverOrigin =
+            interactionOrigin != null
+                ? interactionOrigin.position
+                : transform.position;
+
+        Collider targetCollider =
+            target.GetComponentInChildren<Collider>();
+
+        Vector3 closestPoint =
+            targetCollider != null
+                ? targetCollider.ClosestPoint(serverOrigin)
+                : target.transform.position;
+
+        float squaredDistance =
+            (closestPoint - serverOrigin).sqrMagnitude;
+
+        return squaredDistance <=
+               maximumServerDistance *
+               maximumServerDistance;
     }
 
     private void DrawInteractionRay()
@@ -103,8 +181,11 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
 
         Debug.DrawRay(
             interactionOrigin.position,
-            interactionOrigin.forward * interactionDistance,
-            currentTarget != null ? Color.green : Color.red);
+            interactionOrigin.forward *
+            interactionDistance,
+            currentTarget != null
+                ? Color.green
+                : Color.red);
     }
 
     private void OnDisable()

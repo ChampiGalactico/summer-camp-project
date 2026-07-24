@@ -1,10 +1,10 @@
+using Mirror;
 using UnityEngine;
 
 /// <summary>
-/// Clase base para cualquier objeto con el que Carmen o Carlos
-/// puedan interactuar.
+/// Clase base para objetos interactuables sincronizados.
 /// </summary>
-public abstract class RatInteractable : MonoBehaviour
+public abstract class RatInteractable : NetworkBehaviour
 {
     [Header("Interaction")]
     [SerializeField]
@@ -13,15 +13,26 @@ public abstract class RatInteractable : MonoBehaviour
     public string InteractionPrompt => interactionPrompt;
 
     /// <summary>
-    /// Permite que cada objeto decida si puede usarse en este momento.
+    /// Comprobación local para decidir si el objeto
+    /// puede mostrarse como seleccionable.
     /// </summary>
-    public virtual bool CanInteract(GameObject interactor)
+    public virtual bool CanPreviewInteraction(GameObject interactor)
     {
         return interactor != null;
     }
 
     /// <summary>
-    /// Ejecuta la interacci�n concreta del objeto.
+    /// Validación adicional ejecutada en el servidor.
     /// </summary>
-    public abstract void Interact(GameObject interactor);
+    [Server]
+    public virtual bool CanServerInteract(NetworkIdentity interactor)
+    {
+        return interactor != null;
+    }
+
+    /// <summary>
+    /// Cada interactuable concreto debe implementar
+    /// su comportamiento autoritativo.
+    /// </summary>
+    public abstract void ServerInteract(NetworkIdentity interactor);
 }
