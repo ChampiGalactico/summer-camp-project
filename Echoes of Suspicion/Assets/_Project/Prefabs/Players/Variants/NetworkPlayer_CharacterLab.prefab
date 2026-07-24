@@ -2652,7 +2652,8 @@ MonoBehaviour:
   syncMode: 0
   syncInterval: 0
   interactionOrigin: {fileID: 6675729568498259678}
-  interactionDistance: 2.2
+  interactionDistance: 2.3
+  interactionRadius: 0.18
   interactionMask:
     serializedVersion: 2
     m_Bits: 8

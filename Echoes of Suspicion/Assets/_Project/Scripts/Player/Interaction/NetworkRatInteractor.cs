@@ -12,12 +12,22 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
     [SerializeField, Min(0.1f)]
     private float interactionDistance = 2.2f;
 
+    [SerializeField, Min(0.01f)]
+    private float interactionRadius = 0.18f;
+
     [SerializeField]
     private LayerMask interactionMask;
 
     [Header("Server Validation")]
     [SerializeField, Min(0.1f)]
     private float maximumServerDistance = 2.75f;
+
+    [Header("Throwing")]
+    [SerializeField, Min(0f)]
+    private float throwImpulse = 2.4f;
+
+    [SerializeField, Range(0f, 0.5f)]
+    private float upwardThrowBias = 0.08f;
 
     [Header("Debug")]
     [SerializeField]
@@ -28,11 +38,22 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
 
     private RatInteractable currentTarget;
 
+    private CursorLockMode previousCursorLockState;
+    private bool suppressThrowUntilMouseRelease;
+
     public NetworkIdentity HeldItemIdentity =>
         heldItemIdentity;
 
     public bool IsHoldingItem =>
         heldItemIdentity != null;
+
+    public override void OnStartLocalPlayer()
+    {
+        base.OnStartLocalPlayer();
+
+        previousCursorLockState = Cursor.lockState;
+        suppressThrowUntilMouseRelease = false;
+    }
 
     private void Update()
     {
@@ -41,6 +62,7 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
             return;
         }
 
+        UpdateThrowInputGuard();
         UpdateCurrentTarget();
         HandleInteractionInput();
         DrawInteractionRay();
@@ -73,8 +95,9 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
             return null;
         }
 
-        bool didHit = Physics.Raycast(
+        bool didHit = Physics.SphereCast(
             interactionOrigin.position,
+            interactionRadius,
             interactionOrigin.forward,
             out RaycastHit hit,
             interactionDistance,
@@ -98,24 +121,70 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
         return interactable;
     }
 
+    private void UpdateThrowInputGuard()
+    {
+        Mouse mouse = Mouse.current;
+
+        bool cursorWasJustLocked =
+            previousCursorLockState != CursorLockMode.Locked &&
+            Cursor.lockState == CursorLockMode.Locked;
+
+        if (cursorWasJustLocked)
+        {
+            // El clic actual fue utilizado para recuperar
+            // el control de la cámara.
+            suppressThrowUntilMouseRelease = true;
+
+            previousCursorLockState = Cursor.lockState;
+            return;
+        }
+
+        // No habilitamos nuevamente el lanzamiento hasta
+        // que el jugador haya soltado el botón.
+        if (suppressThrowUntilMouseRelease &&
+            (mouse == null || !mouse.leftButton.isPressed))
+        {
+            suppressThrowUntilMouseRelease = false;
+        }
+
+        previousCursorLockState = Cursor.lockState;
+    }
+
     private void HandleInteractionInput()
     {
         Keyboard keyboard = Keyboard.current;
+        Mouse mouse = Mouse.current;
 
-        if (keyboard == null ||
-            !keyboard.eKey.wasPressedThisFrame)
-        {
-            return;
-        }
+        bool pressedInteract =
+            keyboard != null &&
+            keyboard.eKey.wasPressedThisFrame;
 
-        // Si ya sostiene algo, E lo suelta.
+        // Mientras la rata sostiene un objeto:
+        // E lo deja suavemente y clic izquierdo lo lanza.
         if (heldItemIdentity != null)
         {
-            CmdDropHeldItem();
+            if (pressedInteract)
+            {
+                CmdDropHeldItem();
+                return;
+            }
+
+            bool pressedThrow =
+                mouse != null &&
+                !suppressThrowUntilMouseRelease &&
+                mouse.leftButton.wasPressedThisFrame &&
+                Cursor.lockState == CursorLockMode.Locked;
+
+            if (pressedThrow)
+            {
+                CmdThrowHeldItem(
+                    interactionOrigin.forward);
+            }
+
             return;
         }
 
-        if (currentTarget == null)
+        if (!pressedInteract || currentTarget == null)
         {
             return;
         }
@@ -179,6 +248,41 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
         pickupItem.ServerDrop(netIdentity);
     }
 
+    [Command]
+    private void CmdThrowHeldItem(
+        Vector3 requestedDirection)
+    {
+        if (heldItemIdentity == null)
+        {
+            return;
+        }
+
+        NetworkPickupItem pickupItem =
+            heldItemIdentity.GetComponent<NetworkPickupItem>();
+
+        if (pickupItem == null)
+        {
+            heldItemIdentity = null;
+            return;
+        }
+
+        if (!TryNormalizeDirection(
+                requestedDirection,
+                out Vector3 throwDirection))
+        {
+            return;
+        }
+
+        throwDirection =
+            (throwDirection +
+            Vector3.up * upwardThrowBias).normalized;
+
+        pickupItem.ServerThrow(
+            netIdentity,
+            throwDirection,
+            throwImpulse);
+    }
+
     [Server]
     public bool ServerCanAcceptPickup(
         NetworkIdentity itemIdentity)
@@ -237,18 +341,43 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
 
     private void DrawInteractionRay()
     {
-        if (!drawDebugRay)
+        if (!drawDebugRay || interactionOrigin == null)
         {
             return;
         }
 
-        Debug.DrawRay(
-            interactionOrigin.position,
-            interactionOrigin.forward *
-            interactionDistance,
+        Color rayColor =
             currentTarget != null
                 ? Color.green
-                : Color.red);
+                : Color.red;
+
+        Vector3 origin = interactionOrigin.position;
+        Vector3 direction = interactionOrigin.forward;
+
+        Debug.DrawRay(
+            origin,
+            direction * interactionDistance,
+            rayColor);
+
+        Debug.DrawRay(
+            origin + interactionOrigin.right * interactionRadius,
+            direction * interactionDistance,
+            rayColor);
+
+        Debug.DrawRay(
+            origin - interactionOrigin.right * interactionRadius,
+            direction * interactionDistance,
+            rayColor);
+
+        Debug.DrawRay(
+            origin + interactionOrigin.up * interactionRadius,
+            direction * interactionDistance,
+            rayColor);
+
+        Debug.DrawRay(
+            origin - interactionOrigin.up * interactionRadius,
+            direction * interactionDistance,
+            rayColor);
     }
 
     public override void OnStopServer()
@@ -275,6 +404,36 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
         }
 
         base.OnStopServer();
+    }
+
+    private static bool TryNormalizeDirection(
+        Vector3 requestedDirection,
+        out Vector3 normalizedDirection)
+    {
+        normalizedDirection = Vector3.zero;
+
+        if (!IsFinite(requestedDirection.x) ||
+            !IsFinite(requestedDirection.y) ||
+            !IsFinite(requestedDirection.z))
+        {
+            return false;
+        }
+
+        if (requestedDirection.sqrMagnitude < 0.0001f)
+        {
+            return false;
+        }
+
+        normalizedDirection =
+            requestedDirection.normalized;
+
+        return true;
+    }
+
+    private static bool IsFinite(float value)
+    {
+        return !float.IsNaN(value) &&
+            !float.IsInfinity(value);
     }
 
     private void OnDisable()

@@ -2,6 +2,7 @@ using Mirror;
 using UnityEngine;
 
 [DisallowMultipleComponent]
+[RequireComponent(typeof(Rigidbody))]
 public sealed class NetworkPickupItem : RatInteractable
 {
     [Header("Held Pose")]
@@ -11,18 +12,17 @@ public sealed class NetworkPickupItem : RatInteractable
     [SerializeField]
     private Vector3 heldLocalEulerAngles = Vector3.zero;
 
-    [Header("Colliders")]
+    [Header("Physics")]
+    [SerializeField]
+    private Rigidbody itemRigidbody;
+
     [SerializeField]
     private Collider[] itemColliders;
 
-    // Pose autoritativa utilizada cuando el objeto está libre.
-    [SyncVar(hook = nameof(OnDroppedPositionChanged))]
-    private Vector3 droppedPosition;
+    [SerializeField, Range(0f, 1f)]
+    private float inheritedPlayerVelocityMultiplier = 0.35f;
 
-    [SyncVar(hook = nameof(OnDroppedRotationChanged))]
-    private Quaternion droppedRotation;
-
-    // Jugador que sostiene el objeto. Null significa que está libre.
+    // Null significa que el objeto está libre.
     [SyncVar(hook = nameof(OnHolderChanged))]
     private NetworkIdentity holderIdentity;
 
@@ -32,6 +32,11 @@ public sealed class NetworkPickupItem : RatInteractable
 
     private void Awake()
     {
+        if (itemRigidbody == null)
+        {
+            itemRigidbody = GetComponent<Rigidbody>();
+        }
+
         if (itemColliders == null || itemColliders.Length == 0)
         {
             itemColliders =
@@ -43,10 +48,14 @@ public sealed class NetworkPickupItem : RatInteractable
     {
         base.OnStartServer();
 
-        droppedPosition = transform.position;
-        droppedRotation = transform.rotation;
-
-        ApplyDroppedPresentation();
+        if (holderIdentity == null)
+        {
+            ApplyFreePresentation();
+        }
+        else
+        {
+            ApplyHeldPresentation();
+        }
     }
 
     public override void OnStartClient()
@@ -55,7 +64,8 @@ public sealed class NetworkPickupItem : RatInteractable
         RefreshPresentation();
     }
 
-    public override bool CanPreviewInteraction(GameObject interactor)
+    public override bool CanPreviewInteraction(
+        GameObject interactor)
     {
         return !IsHeld &&
                base.CanPreviewInteraction(interactor);
@@ -100,7 +110,36 @@ public sealed class NetworkPickupItem : RatInteractable
     }
 
     [Server]
-    public void ServerDrop(NetworkIdentity requester)
+    public void ServerDrop(
+        NetworkIdentity requester)
+    {
+        ServerRelease(
+            requester,
+            Vector3.zero,
+            0f);
+    }
+
+    [Server]
+    public void ServerThrow(
+        NetworkIdentity requester,
+        Vector3 throwDirection,
+        float throwImpulse)
+    {
+        if (throwDirection.sqrMagnitude < 0.0001f)
+        {
+            return;
+        }
+
+        ServerRelease(
+            requester,
+            throwDirection.normalized,
+            Mathf.Max(0f, throwImpulse));
+    }
+
+    private void ServerRelease(
+        NetworkIdentity requester,
+        Vector3 throwDirection,
+        float throwImpulse)
     {
         if (requester == null ||
             holderIdentity != requester)
@@ -110,27 +149,49 @@ public sealed class NetworkPickupItem : RatInteractable
 
         ResolveDropPose(
             requester,
-            out Vector3 position,
-            out Quaternion rotation);
+            out Vector3 releasePosition,
+            out Quaternion releaseRotation);
 
-        droppedPosition = position;
-        droppedRotation = rotation;
+        Vector3 inheritedVelocity =
+            GetInteractorVelocity(requester) *
+            inheritedPlayerVelocityMultiplier;
 
         NetworkRatInteractor ratInteractor =
             requester.GetComponent<NetworkRatInteractor>();
 
         if (ratInteractor != null)
         {
-            ratInteractor.ServerClearPickup(netIdentity);
+            ratInteractor.ServerClearPickup(
+                netIdentity);
         }
 
         holderIdentity = null;
 
         transform.SetPositionAndRotation(
-            droppedPosition,
-            droppedRotation);
+            releasePosition,
+            releaseRotation);
 
-        ApplyDroppedPresentation();
+        ApplyFreePresentation();
+
+        if (itemRigidbody == null)
+        {
+            return;
+        }
+
+        itemRigidbody.linearVelocity =
+            inheritedVelocity;
+
+        itemRigidbody.angularVelocity =
+            Vector3.zero;
+
+        if (throwImpulse > 0f)
+        {
+            itemRigidbody.AddForce(
+                throwDirection * throwImpulse,
+                ForceMode.Impulse);
+        }
+
+        itemRigidbody.WakeUp();
     }
 
     private void LateUpdate()
@@ -199,31 +260,22 @@ public sealed class NetworkPickupItem : RatInteractable
         rotation = Quaternion.identity;
     }
 
+    private static Vector3 GetInteractorVelocity(
+        NetworkIdentity requester)
+    {
+        CharacterController characterController =
+            requester.GetComponent<CharacterController>();
+
+        return characterController != null
+            ? characterController.velocity
+            : Vector3.zero;
+    }
+
     private void OnHolderChanged(
         NetworkIdentity previousHolder,
         NetworkIdentity newHolder)
     {
         RefreshPresentation();
-    }
-
-    private void OnDroppedPositionChanged(
-        Vector3 previousPosition,
-        Vector3 newPosition)
-    {
-        if (!IsHeld)
-        {
-            transform.position = newPosition;
-        }
-    }
-
-    private void OnDroppedRotationChanged(
-        Quaternion previousRotation,
-        Quaternion newRotation)
-    {
-        if (!IsHeld)
-        {
-            transform.rotation = newRotation;
-        }
     }
 
     private void RefreshPresentation()
@@ -234,7 +286,7 @@ public sealed class NetworkPickupItem : RatInteractable
         }
         else
         {
-            ApplyDroppedPresentation();
+            ApplyFreePresentation();
         }
     }
 
@@ -242,18 +294,43 @@ public sealed class NetworkPickupItem : RatInteractable
     {
         resolvedHoldSocket = null;
         SetCollidersEnabled(false);
+
+        if (itemRigidbody != null)
+        {
+            itemRigidbody.useGravity = false;
+            itemRigidbody.isKinematic = true;
+            itemRigidbody.linearVelocity = Vector3.zero;
+            itemRigidbody.angularVelocity = Vector3.zero;
+        }
+
         TryResolveHoldSocket();
     }
 
-    private void ApplyDroppedPresentation()
+    private void ApplyFreePresentation()
     {
         resolvedHoldSocket = null;
-
-        transform.SetPositionAndRotation(
-            droppedPosition,
-            droppedRotation);
-
         SetCollidersEnabled(true);
+
+        if (itemRigidbody == null)
+        {
+            return;
+        }
+
+        if (isServer)
+        {
+            // Solo el servidor ejecuta la física real.
+            itemRigidbody.isKinematic = false;
+            itemRigidbody.useGravity = true;
+            itemRigidbody.WakeUp();
+        }
+        else
+        {
+            // Los clientes reciben la pose desde NetworkTransform.
+            itemRigidbody.useGravity = false;
+            itemRigidbody.isKinematic = true;
+            itemRigidbody.linearVelocity = Vector3.zero;
+            itemRigidbody.angularVelocity = Vector3.zero;
+        }
     }
 
     private void SetCollidersEnabled(bool isEnabled)
