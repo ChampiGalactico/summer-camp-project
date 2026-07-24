@@ -11,10 +11,10 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/_Project/Scenes/Development/NetworkSandbox.unity
     guid: e2b22edf5b7b8d641b78ad1b800309a5
-  - enabled: 1
+  - enabled: 0
     path: Assets/_Project/Scenes/MainMenu/MainMenu.unity
     guid: 1b674436d702cc84baeb7e4d1b66cea1
-  - enabled: 1
+  - enabled: 0
     path: Assets/_Project/Scenes/Development/EOSNetworkTest.unity
     guid: 224c213a63e076b45ac99b9035f55c3a
   - enabled: 1

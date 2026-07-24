@@ -47,6 +47,17 @@ public sealed class NetworkRatInteractor : NetworkBehaviour
     public bool IsHoldingItem =>
         heldItemIdentity != null;
 
+    public RatInteractable CurrentTarget =>
+    currentTarget;
+
+    public bool HasInteractionTarget =>
+        currentTarget != null;
+
+    public string CurrentInteractionPrompt =>
+        currentTarget != null
+            ? currentTarget.InteractionPrompt
+            : string.Empty;
+
     public override void OnStartLocalPlayer()
     {
         base.OnStartLocalPlayer();
